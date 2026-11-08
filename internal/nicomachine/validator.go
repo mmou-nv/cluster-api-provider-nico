@@ -27,6 +27,9 @@ func ValidateInstance(instance *nicosdk.Instance, machine infrav1.NicoMachine, i
 	if instance.GetVpcId() != machine.Spec.VPCID {
 		return fmt.Errorf("vpcId does not match")
 	}
+	if instance.GetAutoNetwork() != machine.Spec.AutoNetwork {
+		return fmt.Errorf("autoNetwork does not match")
+	}
 	if instance.GetIpxeScript() != machine.Spec.IpxeScript {
 		return fmt.Errorf("ipxeScript does not match")
 	}
