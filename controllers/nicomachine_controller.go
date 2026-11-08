@@ -187,6 +187,13 @@ func (r *NicoMachineReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 			ExcludeTerminated: true,
 		})
 		if err == nil {
+			if nicoMachine.Spec.AutoNetwork {
+				if err := validateAutoNetworkAdoption(ctx, nicoClient, instance, nicoMachine, nicoCluster.Spec.SiteID); err != nil {
+					nicoMachine.Status.Addresses = nil
+					setMachineProvisionedFalse(&nicoMachine, clusterv1.InspectionFailedReason, fmt.Sprintf("failed to adopt autoNetwork instance: %s", err.Error()))
+					return ctrl.Result{RequeueAfter: machineRequeueSlow}, nil
+				}
+			}
 			log.Info("adopting existing NICo instance", "instanceID", instance.GetId())
 			nicoMachine.Status.InstanceID = instance.GetId()
 			nicoMachine.Spec.ProviderID = nico.ProviderID(instance.GetId())
@@ -280,6 +287,12 @@ func (r *NicoMachineReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 					VPCID:  nicoMachine.Spec.VPCID,
 					SiteID: nicoCluster.Spec.SiteID,
 				})
+				if err == nil && nicoMachine.Spec.AutoNetwork {
+					err = validateAutoNetworkAdoption(ctx, nicoClient, instance, nicoMachine, nicoCluster.Spec.SiteID)
+					if err != nil {
+						nicoMachine.Status.Addresses = nil
+					}
+				}
 			}
 			if err != nil {
 				if reason, requeueAfter, ok := failureDomainPlacementFailure(err, failureDomain); ok {
@@ -320,6 +333,19 @@ func (r *NicoMachineReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 			return ctrl.Result{}, fmt.Errorf("backing NICo instance %q was not found: %w", instanceID, err)
 		}
 		return ctrl.Result{}, fmt.Errorf("failed to get instance: %w", err)
+	}
+
+	if nicoMachine.Spec.AutoNetwork {
+		if err := autoNetworkRequestIdentity(instance, nicoMachine.Spec, nicoCluster.Spec.SiteID); err != nil {
+			nicoMachine.Status.Addresses = nil
+			setMachineProvisionedFalse(&nicoMachine, clusterv1.InspectionFailedReason, err.Error())
+			return ctrl.Result{RequeueAfter: machineRequeueSlow}, nil
+		}
+		if instance.GetId() != instanceID {
+			nicoMachine.Status.Addresses = nil
+			setMachineProvisionedFalse(&nicoMachine, clusterv1.InspectionFailedReason, "autoNetwork instance does not match spec.providerID")
+			return ctrl.Result{RequeueAfter: machineRequeueSlow}, nil
+		}
 	}
 
 	// if this is a NICo Machine import
@@ -395,6 +421,7 @@ func (r *NicoMachineReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		// Auto-network instances have no explicit REST interfaces. Read only the
 		// assigned zero-DPU host's primary interface; never infer an IP from a pool.
 		nicoMachine.Status.Addresses = nil
+		ip = ""
 		if !instance.GetAutoNetwork() {
 			setMachineProvisionedFalse(&nicoMachine, clusterv1.InspectionFailedReason, "Instance does not confirm autoNetwork")
 			return ctrl.Result{RequeueAfter: machineRequeueSlow}, nil

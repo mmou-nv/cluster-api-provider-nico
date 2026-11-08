@@ -180,6 +180,7 @@ func TestAutoNetworkReconcilePending(t *testing.T) {
 	instance.SetId("instance-1")
 	instance.SetMachineId("machine-1")
 	instance.SetSiteId("site-1")
+	instance.SetVpcId("vpc-1")
 	instance.SetAutoNetwork(true)
 	instance.SetInterfaces([]nicosdk.Interface{})
 	instance.SetStatus(nicosdk.INSTANCESTATUS_PENDING)

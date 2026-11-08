@@ -4,11 +4,50 @@
 package controllers
 
 import (
+	"context"
 	"fmt"
 	"net"
 
 	nicosdk "github.com/NVIDIA/infra-controller/rest-api/sdk/standard"
+
+	infrav1 "github.com/dsx-ai-factory/cluster-api-provider-nico/api/v1alpha1"
+	"github.com/dsx-ai-factory/cluster-api-provider-nico/internal/nico"
+	"github.com/dsx-ai-factory/cluster-api-provider-nico/internal/nicomachine"
 )
+
+func autoNetworkRequestIdentity(instance *nicosdk.Instance, spec infrav1.NicoMachineSpec, siteID string) error {
+	if instance == nil || instance.GetId() == "" || !instance.GetAutoNetwork() {
+		return fmt.Errorf("instance does not confirm autoNetwork identity")
+	}
+	if siteID == "" || instance.GetSiteId() != siteID {
+		return fmt.Errorf("autoNetwork instance site does not match the requested site")
+	}
+	if spec.MachineID != "" && instance.GetMachineId() != spec.MachineID {
+		return fmt.Errorf("autoNetwork instance machine does not match spec.machineID")
+	}
+	if spec.InstanceTypeID != "" && instance.GetInstanceTypeId() != spec.InstanceTypeID {
+		return fmt.Errorf("autoNetwork instance type does not match spec.instanceTypeID")
+	}
+	if instance.GetVpcId() != spec.VPCID {
+		return fmt.Errorf("autoNetwork instance VPC does not match spec.vpcID")
+	}
+	return nil
+}
+
+func validateAutoNetworkAdoption(ctx context.Context, api nico.API, instance *nicosdk.Instance, machine infrav1.NicoMachine, siteID string) error {
+	if err := autoNetworkRequestIdentity(instance, machine.Spec, siteID); err != nil {
+		return err
+	}
+	var instanceType *nicosdk.InstanceType
+	if id := instance.GetInstanceTypeId(); id != "" {
+		var err error
+		instanceType, err = api.GetInstanceTypeWithAllocationStats(ctx, id)
+		if err != nil {
+			return fmt.Errorf("inspect instance type before autoNetwork adoption: %w", err)
+		}
+	}
+	return nicomachine.ValidateInstance(instance, machine, instanceType)
+}
 
 func autoNetworkHostIPv4(instance *nicosdk.Instance, machine *nicosdk.Machine) (string, error) {
 	if instance == nil || machine == nil || !instance.GetAutoNetwork() ||
