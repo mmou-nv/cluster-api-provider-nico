@@ -227,6 +227,37 @@ it does not use NICo's batch allocation API, even though
 `machineLabelSelector` is supported there too. CapNICo still creates one
 `NicoMachine` at a time and does not yet provide grouped NVLink co-placement.
 
+## Automatic Host Networking
+
+For a zero-DPU machine in a FLAT VPC, set `autoNetwork: true` and omit
+`interfaces` or set it to `[]` in the `NicoMachine` spec or the
+`NicoMachineTemplate.spec.template.spec`:
+
+```yaml
+vpcID: <flat-vpc-id>
+instanceTypeID: <instance-type-id>
+autoNetwork: true
+interfaces: []
+```
+
+NICo validates the VPC and resolves the host-underlay networking. Do not combine
+automatic networking with subnet or VPC-prefix attachments. Without
+`autoNetwork: true`, at least one explicit interface remains required. The
+network mode and interfaces are immutable after `providerID` is set.
+
+An automatic-network instance can return an empty `interfaces` list even when
+NICo reports it as Ready. CAPNICo reads the assigned Machine's primary host
+interface for its internal IPv4 address. This path requires matching instance,
+Machine and site identities, an explicitly empty DPU inventory, and exactly
+one primary non-DPU interface with one usable IPv4 address. Missing or ambiguous
+evidence prevents CAPNICo from reporting the automatic-network Machine Ready.
+The identity must have permission to read that Machine. No IP is inferred from
+an allocation range or copied from another Machine.
+
+TPM EK metadata still comes from the instance's `tpmEkCertificate`. Consumers
+that require TPM attestation must independently require a nonempty
+`status.tpmEkPubHash`; Machine Ready does not prove SPIRE attestation.
+
 ## Install
 
 Initialize the core Cluster API controllers and the kubeadm providers:

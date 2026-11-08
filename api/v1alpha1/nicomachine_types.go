@@ -86,6 +86,7 @@ type NicoMachineNVLinkInterface struct {
 
 // NicoMachineSpec defines the desired state of NicoMachine.
 // +kubebuilder:validation:XValidation:rule="has(self.instanceTypeID) != has(self.machineID)",message="exactly one of instanceTypeID or machineID must be set"
+// +kubebuilder:validation:XValidation:rule="(has(self.autoNetwork) && self.autoNetwork) ? (!has(self.interfaces) || size(self.interfaces) == 0) : (has(self.interfaces) && size(self.interfaces) > 0)",message="autoNetwork requires empty interfaces; otherwise at least one interface is required"
 // +kubebuilder:validation:XValidation:rule="!(has(self.infinibandPartitionID) && has(self.infinibandInterfaces))",message="infinibandPartitionID and infinibandInterfaces are mutually exclusive"
 // +kubebuilder:validation:XValidation:rule="!has(self.infinibandPartitionID) || has(self.instanceTypeID)",message="infinibandPartitionID requires instanceTypeID"
 // +kubebuilder:validation:XValidation:rule="!(has(self.nvLinkLogicalPartitionID) && has(self.nvLinkInterfaces))",message="nvLinkLogicalPartitionID and nvLinkInterfaces are mutually exclusive"
@@ -101,10 +102,17 @@ type NicoMachineSpec struct {
 	// +kubebuilder:validation:MinLength=1
 	InstanceTypeID string `json:"instanceTypeID,omitempty"`
 
+	// AutoNetwork asks NICo to resolve networking from the host's underlay.
+	// Set this for zero-DPU machines in a FLAT VPC. Interfaces must be empty.
+	// NICo validates whether the selected VPC and machine support this mode.
+	// +optional
+	AutoNetwork bool `json:"autoNetwork,omitempty"`
+
 	// Interfaces are the interface attachment requests for the instance.
 	// Use subnet-based attachments for Ethernet network virtualization and VPC prefix-based attachments for next-generation networking.
-	// +kubebuilder:validation:MinItems=1
-	Interfaces []NicoMachineInterface `json:"interfaces"`
+	// Required unless AutoNetwork is true; mutually exclusive with AutoNetwork.
+	// +optional
+	Interfaces []NicoMachineInterface `json:"interfaces,omitempty"`
 
 	// InfinibandInterfaces requests that one or more InfiniBand Partitions be attached
 	// to the instance.
@@ -232,7 +240,8 @@ type NicoMachineStatus struct {
 // +kubebuilder:resource:scope=Namespaced,categories=cluster-api,shortName=nicom
 // +kubebuilder:validation:XValidation:rule="!has(oldSelf.spec.providerID) || self.spec.vpcID == oldSelf.spec.vpcID",message="spec.vpcID is immutable after providerID is set"
 // +kubebuilder:validation:XValidation:rule="!has(oldSelf.spec.providerID) || (has(self.spec.instanceTypeID) == has(oldSelf.spec.instanceTypeID) && (!has(self.spec.instanceTypeID) || self.spec.instanceTypeID == oldSelf.spec.instanceTypeID))",message="spec.instanceTypeID is immutable after providerID is set"
-// +kubebuilder:validation:XValidation:rule="!has(oldSelf.spec.providerID) || self.spec.interfaces == oldSelf.spec.interfaces",message="spec.interfaces is immutable after providerID is set"
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.spec.providerID) || ((has(self.spec.autoNetwork) && self.spec.autoNetwork) == (has(oldSelf.spec.autoNetwork) && oldSelf.spec.autoNetwork))",message="spec.autoNetwork is immutable after providerID is set"
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.spec.providerID) || ((!has(self.spec.interfaces) || size(self.spec.interfaces) == 0) && (!has(oldSelf.spec.interfaces) || size(oldSelf.spec.interfaces) == 0)) || (has(self.spec.interfaces) && has(oldSelf.spec.interfaces) && self.spec.interfaces == oldSelf.spec.interfaces)",message="spec.interfaces is immutable after providerID is set"
 // +kubebuilder:validation:XValidation:rule="!has(oldSelf.spec.providerID) || (has(self.spec.infinibandInterfaces) == has(oldSelf.spec.infinibandInterfaces) && (!has(self.spec.infinibandInterfaces) || self.spec.infinibandInterfaces == oldSelf.spec.infinibandInterfaces))",message="spec.infinibandInterfaces is immutable after providerID is set"
 // +kubebuilder:validation:XValidation:rule="!has(oldSelf.spec.providerID) || (has(self.spec.infinibandPartitionID) == has(oldSelf.spec.infinibandPartitionID) && (!has(self.spec.infinibandPartitionID) || self.spec.infinibandPartitionID == oldSelf.spec.infinibandPartitionID))",message="spec.infinibandPartitionID is immutable after providerID is set"
 // +kubebuilder:validation:XValidation:rule="!has(oldSelf.spec.providerID) || (has(self.spec.nvLinkInterfaces) == has(oldSelf.spec.nvLinkInterfaces) && (!has(self.spec.nvLinkInterfaces) || self.spec.nvLinkInterfaces == oldSelf.spec.nvLinkInterfaces))",message="spec.nvLinkInterfaces is immutable after providerID is set"

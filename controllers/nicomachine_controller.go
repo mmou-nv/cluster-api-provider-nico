@@ -391,7 +391,29 @@ func (r *NicoMachineReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return ctrl.Result{}, err
 	}
 
-	if ip := firstIPv4FromInstance(instance); ip != "" {
+	ip := firstIPv4FromInstance(instance)
+	if nicoMachine.Spec.AutoNetwork {
+		// Auto-network instances have no explicit REST interfaces. Read only the
+		// assigned zero-DPU host's primary interface; never infer an IP from a pool.
+		nicoMachine.Status.Addresses = nil
+		if !instance.GetAutoNetwork() {
+			setMachineProvisionedFalse(&nicoMachine, clusterv1.InspectionFailedReason, "Instance does not confirm autoNetwork")
+			return ctrl.Result{RequeueAfter: machineRequeueSlow}, nil
+		}
+		if nico.IsReady(instance) {
+			machine, err := nicoClient.GetMachine(ctx, instance.GetMachineId())
+			if err != nil {
+				setMachineProvisionedFalse(&nicoMachine, clusterv1.InspectionFailedReason, "Failed to read autoNetwork host interfaces")
+				return ctrl.Result{RequeueAfter: machineRequeueSlow}, err
+			}
+			ip, err = autoNetworkHostIPv4(instance, machine)
+			if err != nil {
+				setMachineProvisionedFalse(&nicoMachine, infrav1.InstanceNotReadyReason, err.Error())
+				return ctrl.Result{RequeueAfter: machineRequeueSlow}, nil
+			}
+		}
+	}
+	if ip != "" {
 		nicoMachine.Status.Addresses = []clusterv1.MachineAddress{{
 			Type:    clusterv1.MachineInternalIP,
 			Address: ip,
@@ -861,8 +883,12 @@ func buildInstanceCreateRequest(
 	bootstrapCloudConfig string,
 	instanceTypeCapabilities nicomachine.InstanceTypeCapabilities,
 ) (*nicosdk.InstanceCreateRequest, error) {
-	if len(nicoMachine.Spec.Interfaces) == 0 {
-		return nil, fmt.Errorf("spec.interfaces must contain at least one entry")
+	if nicoMachine.Spec.AutoNetwork {
+		if len(nicoMachine.Spec.Interfaces) != 0 {
+			return nil, fmt.Errorf("spec.autoNetwork and spec.interfaces are mutually exclusive")
+		}
+	} else if len(nicoMachine.Spec.Interfaces) == 0 {
+		return nil, fmt.Errorf("spec.interfaces must contain at least one entry unless spec.autoNetwork is true")
 	}
 	if err := instanceTypeCapabilities.ValidatePartitionSupport(nicoMachine.Spec); err != nil {
 		return nil, err
@@ -898,6 +924,9 @@ func buildInstanceCreateRequest(
 
 	createReq := nicosdk.NewInstanceCreateRequest(name, tenantID, nicoMachine.Spec.VPCID)
 	createReq.SetInterfaces(interfaces)
+	if nicoMachine.Spec.AutoNetwork {
+		createReq.SetAutoNetwork(true)
+	}
 	createReq.SetDescription("Managed by Cluster API")
 	createReq.SetUserData(bootstrapCloudConfig)
 	if nicoMachine.Spec.InstanceTypeID != "" {

@@ -1,0 +1,25 @@
+instances:
+- org: org-1
+  resource:
+    id: seeded-1
+    autoNetwork: true
+    interfaces: []
+    machineId: machine-id-1
+    name: machine-1
+    siteId: site-1
+    status: Ready
+    tenantId: tenant-1
+    vpcId: vpc-1
+machines:
+- org: org-1
+  resource:
+    id: machine-id-1
+    instanceId: seeded-1
+    siteId: site-1
+    status: InUse
+    associatedDpuMachineIds: []
+    machineInterfaces:
+    - id: interface-1
+      machineId: machine-id-1
+      isPrimary: true
+      ipAddresses: []
